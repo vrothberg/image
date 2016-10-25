@@ -14,7 +14,7 @@ import (
 	"github.com/containers/image/docker/reference"
 	"github.com/containers/image/manifest"
 	"github.com/containers/image/types"
-	"github.com/docker/engine-api/client"
+	"github.com/docker/docker/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
@@ -95,7 +95,7 @@ func (d *daemonImageDestination) Close() {
 	if !d.committed {
 		logrus.Debugf("docker-daemon: Closing tar stream to abort loading")
 		// In principle, goroutineCancel() should abort the HTTP request and stop the process from continuing.
-		// In practice, though, https://github.com/docker/engine-api/blob/master/client/transport/cancellable/cancellable.go
+		// In practice, though, https://github.com/docker/api/docker/types/blob/master/client/transport/cancellable/cancellable.go
 		// currently just runs the HTTP request to completion in a goroutine, and returns early if the context is canceled
 		// without terminating the HTTP request at all.  So we need this CloseWithError to terminate sending the HTTP request Body
 		// immediately, and hopefully, through terminating the sending which uses "Transfer-Encoding: chunked"" without sending
