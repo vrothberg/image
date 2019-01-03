@@ -5,9 +5,11 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
+	"github.com/pkg/errors"
 	"github.com/BurntSushi/toml"
 	"github.com/containers/image/types"
 )
@@ -51,6 +53,9 @@ type Registry struct {
 	// effectively be pulled from "example.com/foo/bar/myimage:latest".
 	// If no Prefix is specified, it defaults to the specified URL.
 	Prefix string `toml:"prefix"`
+
+	// prefixRegex is the regex used for prefix matching.
+	prefixRegex *regexp.Regexp
 }
 
 // backwards compatability to sysregistries v1
@@ -159,6 +164,16 @@ func getV1Registries(config *tomlConfig) ([]Registry, error) {
 	return registries, nil
 }
 
+// prefixToRegex transforms prefix into a corresponding regexp.Regexp, putting
+// the prefix at the beginning of the regex.
+func prefixToRegex(prefix string) (*regexp.Regexp, error) {
+	re, err := regexp.Compile(fmt.Sprintf("^%s", prefix))
+	if err != nil {
+		return nil, errors.Wrapf(err, "error generating regex for prefix %q", prefix)
+	}
+	return re, nil
+}
+
 // postProcessRegistries checks the consistency of all registries (e.g., set
 // the Prefix to URL if not set) and applies conflict checks.  It returns an
 // array of cleaned registries and error in case of conflicts.
@@ -183,6 +198,12 @@ func postProcessRegistries(regs []Registry) ([]Registry, error) {
 				return nil, err
 			}
 		}
+
+		re, err := prefixToRegex(reg.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		reg.prefixRegex = re
 
 		// make sure mirrors are valid
 		for _, mir := range reg.Mirrors {
@@ -318,30 +339,34 @@ func FindUnqualifiedSearchRegistries(ctx *types.SystemContext) ([]Registry, erro
 	return unqualified, nil
 }
 
-// refMatchesPrefix returns true iff ref,
+// computePrefix returns the length of matching string iff ref,
 // which is a registry, repository namespace, repository or image reference (as formatted by
 // reference.Domain(), reference.Named.Name() or reference.Reference.String()
 // — note that this requires the name to start with an explicit hostname!),
-// matches a Registry.Prefix value.
+// matches the specified regular expression value.
 // (This is split from the caller primarily to make testing easier.)
-func refMatchesPrefix(ref, prefix string) bool {
-	switch {
-	case len(ref) < len(prefix):
-		return false
-	case len(ref) == len(prefix):
-		return ref == prefix
-	case len(ref) > len(prefix):
-		if !strings.HasPrefix(ref, prefix) {
-			return false
-		}
-		c := ref[len(prefix)]
-		// This allows "example.com:5000" to match "example.com",
-		// which is unintended; that will get fixed eventually, DON'T RELY
-		// ON THE CURRENT BEHAVIOR.
-		return c == ':' || c == '/' || c == '@'
-	default:
-		panic("Internal error: impossible comparison outcome")
+func computePrefixLength(ref string, prefixRegex *regexp.Regexp) int {
+	// loc is a tuple of (first index, last index) of the match or
+	// nil if the regex doesn't match the string
+	loc := prefixRegex.FindStringIndex(ref)
+	if loc == nil {
+		return 0
 	}
+
+	// check for full match to avoid out-of-range errors
+	if loc[1] == len(ref) {
+		return loc[1]
+	}
+
+	// This allows "example.com:5000" to match "example.com",
+	// which is unintended; that will get fixed eventually, DON'T RELY
+	// ON THE CURRENT BEHAVIOR.
+	c := ref[loc[1]]
+	if c == ':' || c == '/' || c == '@' {
+		return loc[1]
+	}
+
+	return 0
 }
 
 // FindRegistry returns the Registry with the longest prefix for ref,
@@ -358,12 +383,10 @@ func FindRegistry(ctx *types.SystemContext, ref string) (*Registry, error) {
 	reg := Registry{}
 	prefixLen := 0
 	for _, r := range registries {
-		if refMatchesPrefix(ref, r.Prefix) {
-			length := len(r.Prefix)
-			if length > prefixLen {
-				reg = r
-				prefixLen = length
-			}
+		length := computePrefixLength(ref, r.prefixRegex)
+		if length > prefixLen {
+			reg = r
+			prefixLen = length
 		}
 	}
 	if prefixLen != 0 {

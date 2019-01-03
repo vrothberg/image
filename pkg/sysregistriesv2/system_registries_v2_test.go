@@ -121,7 +121,8 @@ url = "mirror-b.com"
 	assert.Contains(t, err.Error(), "invalid URL")
 }
 
-func TestRefMatchesPrefix(t *testing.T) {
+func TestComputePrefixLength(t *testing.T) {
+	// Basic test to check for matches (i.e., length > 0)
 	for _, c := range []struct {
 		ref, prefix string
 		expected    bool
@@ -155,9 +156,29 @@ func TestRefMatchesPrefix(t *testing.T) {
 		{"example.com/foo", "example.com/foo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false},
 		{"example.com/foo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "example.com/foo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true},
 		{"example.com/foo@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "example.com/foo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false},
+		// Prefix as a regular expression
+		{"example.com", ".*", true},
+		{"example.com", "exam[elp]{3}.com", true},
 	} {
-		res := refMatchesPrefix(c.ref, c.prefix)
-		assert.Equal(t, c.expected, res, fmt.Sprintf("%s vs. %s", c.ref, c.prefix))
+		prefixRegex, err := prefixToRegex(c.prefix)
+		assert.Nil(t, err)
+		length := computePrefixLength(c.ref, prefixRegex)
+		assert.Equal(t, c.expected, length > 0, fmt.Sprintf("%s vs. %s", c.ref, c.prefix))
+	}
+
+	// Precise length checks
+	for _, c := range []struct {
+		ref, prefix string
+		expected    int
+	}{
+		{"docker.io", "docker.io", len("docker.io")},
+		{"example.com/foo/bar@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "example.com", len("example.com")},
+		{"example.com/foo/bar@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "example.com/.*", len("example.com/foo/bar@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+	} {
+		prefixRegex, err := prefixToRegex(c.prefix)
+		assert.Nil(t, err)
+		length := computePrefixLength(c.ref, prefixRegex)
+		assert.Equal(t, c.expected, length, fmt.Sprintf("%s vs. %s", c.ref, c.prefix))
 	}
 }
 
