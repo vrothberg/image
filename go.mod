@@ -49,3 +49,5 @@ require (
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0 // indirect
 	k8s.io/client-go v0.0.0-20170217214107-bcde30fb7eae
 )
+
+replace github.com/containers/storage => github.com/vrothberg/storage master
