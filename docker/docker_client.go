@@ -19,11 +19,11 @@ import (
 
 	"github.com/containers/image/v5/docker/reference"
 	"github.com/containers/image/v5/internal/iolimits"
+	"github.com/containers/image/v5/internal/useragent"
 	"github.com/containers/image/v5/pkg/docker/config"
 	"github.com/containers/image/v5/pkg/sysregistriesv2"
 	"github.com/containers/image/v5/pkg/tlsclientconfig"
 	"github.com/containers/image/v5/types"
-	"github.com/containers/image/v5/version"
 	"github.com/containers/storage/pkg/homedir"
 	clientLib "github.com/docker/distribution/registry/client"
 	"github.com/docker/go-connections/tlsconfig"
@@ -66,9 +66,8 @@ var (
 		{path: "/etc/containers/certs.d", absolute: true},
 		{path: "/etc/docker/certs.d", absolute: true},
 	}
-
-	defaultUserAgent = "containers/" + version.Version + " (github.com/containers/image)"
 )
+
 
 // extensionSignature and extensionSignatureList come from github.com/openshift/origin/pkg/dockerregistry/server/signaturedispatcher.go:
 // signature represents a Docker image signature.
@@ -279,15 +278,10 @@ func newDockerClient(sys *types.SystemContext, registry, reference string) (*doc
 	}
 	tlsClientConfig.InsecureSkipVerify = skipVerify
 
-	userAgent := defaultUserAgent
-	if sys != nil && sys.DockerRegistryUserAgent != "" {
-		userAgent = sys.DockerRegistryUserAgent
-	}
-
 	return &dockerClient{
 		sys:             sys,
 		registry:        registry,
-		userAgent:       userAgent,
+		userAgent:       useragent.UserAgent(sys),
 		tlsClientConfig: tlsClientConfig,
 	}, nil
 }
